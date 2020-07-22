@@ -1,6 +1,7 @@
 from . import base
 from . import utils
 import os
+import signal
 import socket
 import struct
 import unittest
@@ -8,6 +9,25 @@ import urllib.request
 
 
 class BasicTest(base.TestCase):
+    def test_exit_with_parent(self):
+        ''' Test whether process exits with parent. '''
+        c1, c2 = socket.socketpair(socket.AF_UNIX)
+        os.set_inheritable(c2.fileno(), True)
+        pid = os.fork()
+        if pid == 0:
+            p = self.prun("-exit-with-parent", close_fds=False)
+            self.assertStartSync(p)
+            c2.send(p.p.pid.to_bytes(8, byteorder='little'))
+            c2.recv(1) # wait
+        else:
+            cpid = int.from_bytes(c1.recv(8), byteorder='little')
+            os.kill(pid, signal.SIGTERM)
+            os.waitpid(pid, 0)
+            with self.assertRaises(OSError):
+                os.kill(cpid, 0)
+        c1.close()
+        c2.close()
+
     def test_help(self):
         ''' Basic test if -h prints stuff looking like help screen. '''
         p = self.prun("-h", netns=False)
